@@ -1,0 +1,151 @@
+# Load packages ----------------------------------------------------------------
+
+library(shiny)
+library(ggplot2)
+library(shinythemes)
+library(readr)
+library(dplyr)
+library(DT)
+
+# Load data --------------------------------------------------------------------
+
+injury_data <- read_csv("https://raw.githubusercontent.com/Hanas-Aziz/Hanas-CWF-datset/main/Hanas%20tester.csv")
+
+# Define UI --------------------------------------------------------------------
+
+ui <- fluidPage(
+  shinythemes::themeSelector(),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput(
+        inputId = "y",
+        label = "Y-axis:",
+        choices = c(
+          "Player Age" = "Player_Age",
+          "Player Weight" = "Player_Weight",
+          "Player Height" = "Player_Height",
+          "Training Intensity" = "Training_Intensity",
+          "Recovery Time" = "Recovery_Time"
+        ),
+        selected = "Player_Age"
+      ),
+      
+      selectInput(
+        inputId = "x",
+        label = "X-axis:",
+        choices = c(
+          "Player Age" = "Player_Age",
+          "Player Weight" = "Player_Weight",
+          "Player Height" = "Player_Height",
+          "Training Intensity" = "Training_Intensity",
+          "Recovery Time" = "Recovery_Time"
+        ),
+        selected = "Player_Weight"
+      ),
+      
+      selectInput(
+        inputId = "z",
+        label = "Color by:",
+        choices = c(
+          "Likelihood of Injury" = "Likelihood_of_Injury",
+          "Previous Injuries" = "Previous_Injuries"
+        ),
+        selected = "Likelihood_of_Injury"
+      ),
+      
+      sliderInput(
+        inputId = "alpha",
+        label = "Alpha:",
+        min = 0, max = 1,
+        value = 0.5
+      ),
+      
+      sliderInput(
+        inputId = "size",
+        label = "Size:",
+        min = 0, max = 5,
+        value = 2
+      ),
+      
+      textInput(
+        inputId = "plot_title",
+        label = "Plot title",
+        placeholder = "Enter text to be used as plot title"
+      ),
+      
+      actionButton(
+        inputId = "update_plot_title",
+        label = "Update plot title"
+      )
+    ),
+    
+    mainPanel(
+      plotOutput(outputId = "scatterplot", brush = brushOpts(id = "plot_brush")),
+      DT::dataTableOutput(outputId = "measurementstable"),
+      textOutput(outputId = "avg_x"), # Average of x
+      textOutput(outputId = "avg_y"), # Average of y
+      verbatimTextOutput(outputId = "lmoutput") # Regression output
+    )
+  )
+)
+
+# Define server ----------------------------------------------------------------
+
+server <- function(input, output, session) {
+  
+  new_plot_title <- eventReactive(
+    eventExpr = input$update_plot_title,
+    valueExpr = {
+      if (input$plot_title != "") {
+        input$plot_title
+      } else {
+        "Scatterplot of Injury Data"
+      }
+    }
+  )
+  
+  output$scatterplot <- renderPlot({
+    color_palette <- c("no" = "green", "yes" = "red")
+    
+    ggplot(data = injury_data, aes_string(x = input$x, y = input$y, color = input$z)) +
+      geom_point(alpha = input$alpha, size = input$size) +
+      scale_color_manual(values = color_palette) +
+      labs(title = new_plot_title(),
+           x = input$x,  
+           y = input$y,  
+           color = input$z)
+  })
+  
+  output$measurementstable <- renderDataTable({
+    brushed_data <- brushedPoints(injury_data, brush = input$plot_brush) %>%
+      select(Player_Age, Player_Weight, Player_Height, Training_Intensity, Recovery_Time, Likelihood_of_Injury, Previous_Injuries)
+    
+    datatable(
+      brushed_data,
+      options = list(
+        pageLength = 5,
+        search = list(regex = TRUE, caseInsensitive = TRUE) # Enable search with regex and case insensitivity
+      )
+    )
+  })
+  
+  output$avg_x <- renderText({
+    avg_x <- injury_data %>% pull(input$x) %>% mean(na.rm = TRUE) %>% round(2)
+    paste("Average", input$x, "=", avg_x)
+  })
+  
+  output$avg_y <- renderText({
+    avg_y <- injury_data %>% pull(input$y) %>% mean(na.rm = TRUE) %>% round(2)
+    paste("Average", input$y, "=", avg_y)
+  })
+  
+  output$lmoutput <- renderPrint({
+    x <- injury_data %>% pull(input$x)
+    y <- injury_data %>% pull(input$y)
+    print(summary(lm(y ~ x, data = injury_data)), digits = 3, signif.stars = FALSE)
+  })
+}
+
+# Create the Shiny app object --------------------------------------------------
+
+shinyApp(ui = ui, server = server)
